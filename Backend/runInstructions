@@ -1,0 +1,20 @@
+1. 
+cd Backend/IFRS
+```bash
+dotnet restore
+```
+
+
+2. Goto database folder and open docker desctop
+run following command
+```bash
+.\script.ps1
+```
+
+
+3. Go to backend folder again and run following commands one by one..
+```bash
+dotnet tool install --global dotnet-ef --version 8.0.0
+dotnet ef database update 
+dotnet run 
+```

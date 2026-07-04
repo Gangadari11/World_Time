@@ -1,0 +1,965 @@
+{
+  "info": {
+    "name": "IFRS API",
+    "description": "Complete API for IFRS Lease Management System. Includes JWT authentication with access token (15 min) and refresh token (8 hours). Both tokens are stored as HTTP-only cookies on login. Use the Authentication folder first before calling any protected endpoints.",
+    "schema": "http://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "description": "All authentication endpoints. Start here. Login sets two HTTP-only cookies: accessToken (15 min) and refreshToken (8 hours). The accessToken is also returned in the response body and saved to the {{accessToken}} environment variable automatically.",
+      "item": [
+        {
+          "name": "Check Setup",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Checks whether the first admin user needs to be created. Returns { canRegister: true } if the user table is empty. Call this before showing the registration screen. No token required.",
+            "url": {
+              "raw": "http://localhost:5217/api/auth/setup",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "auth", "setup"]
+            }
+          }
+        },
+        {
+          "name": "Register First Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Creates the very first admin user. Only works when the user table is empty — returns 403 if any user already exists. On success sets two HTTP-only cookies: accessToken (15 min expiry) and refreshToken (8 hours expiry). The accessToken is also saved to {{accessToken}} environment variable automatically via the test script.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@ifrs.com\",\n  \"password\": \"Admin@12345\",\n  \"fullName\": \"System Administrator\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/auth/setup",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "auth", "setup"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    pm.environment.set(\"accessToken\", pm.response.json().accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Authenticates a user with email and password. On success sets two HTTP-only cookies: accessToken (15 min expiry) and refreshToken (8 hours expiry). The accessToken is also returned in the response body and saved to {{accessToken}} environment variable automatically via the test script. Returns userId, role and fullName alongside the token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@ifrs.com\",\n  \"password\": \"Admin@12345\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/auth",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "auth"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    pm.environment.set(\"accessToken\", pm.response.json().accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Issues a new access token using the refreshToken HTTP-only cookie. No body or Authorization header needed — Postman sends the cookie automatically. On success issues a brand new refreshToken cookie (rotation — old one is deleted from DB) and a new accessToken cookie. The new accessToken is also saved to {{accessToken}} environment variable automatically. Returns 401 if the refresh token is missing, expired, or already used.",
+            "url": {
+              "raw": "http://localhost:5217/api/auth/refresh",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "auth", "refresh"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    pm.environment.set(\"accessToken\", pm.response.json().accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Logs out the current user. Does three things: (1) deletes the refresh token from the database, (2) clears the refreshToken HTTP-only cookie, (3) clears the accessToken HTTP-only cookie. After logout calling /api/auth/refresh will return 401. The {{accessToken}} environment variable is also cleared automatically via the test script. Requires a valid access token in the Authorization header.",
+            "url": {
+              "raw": "http://localhost:5217/api/auth/logout",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "auth", "logout"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    pm.environment.unset(\"accessToken\");",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "description": "User management endpoints. All endpoints require a valid access token in the Authorization header. Create and Delete are restricted to admin role only. Any authenticated user can view users and update their own profile.",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Returns a list of all users. Password hashes are never returned. Accessible by any authenticated user (admin or user role).",
+            "url": {
+              "raw": "http://localhost:5217/api/users",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "users"]
+            }
+          }
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Returns a single user by their ID. Password hash is never returned. Accessible by any authenticated user (admin or user role). Returns 404 if user not found.",
+            "url": {
+              "raw": "http://localhost:5217/api/users/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "users", "1"]
+            }
+          }
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Creates a new user. Admin role only — returns 403 for non-admin tokens. Password is hashed with BCrypt before storing. Role: 0 = admin, 1 = user. Returns 400 if email already exists.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test01@ifrs.com\",\n  \"password\": \"Test@12345\",\n  \"fullName\": \"Test User 01\",\n  \"role\": 1\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/users",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "users"]
+            }
+          }
+        },
+        {
+          "name": "Update Own Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Updates the logged-in user's own fullName and email. User identity is read from the JWT token — no user ID needed in the URL. Cannot change own role. Returns 400 if email already taken by another user.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Updated Name\",\n  \"email\": \"updated@ifrs.com\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/users/profile",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "users", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Update Own Password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Updates the logged-in user's own password along with profile details. currentPassword must match the existing password otherwise returns 400. newPassword is hashed with BCrypt before storing. User identity is read from the JWT token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Updated Name\",\n  \"email\": \"updated@ifrs.com\",\n  \"currentPassword\": \"Admin@12345\",\n  \"newPassword\": \"NewPass@12345\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/users/profile",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "users", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Deletes a user by ID. Admin role only — returns 403 for non-admin tokens. Returns 404 if user not found. All refresh tokens for the deleted user are also removed via cascade delete in the database.",
+            "url": {
+              "raw": "http://localhost:5217/api/users/2",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "users", "2"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Branches",
+      "description": "CRUD endpoints for managing company branches. No authentication required.",
+      "item": [
+        {
+          "name": "Create Branch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Creates a new branch. branchName is required.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"oracleCode\": \"BR001\",\n  \"branchName\": \"Main Branch\",\n  \"lessee\": \"Company ABC\",\n  \"status\": \"Active\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/branches",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "branches"]
+            }
+          }
+        },
+        {
+          "name": "Get All Branches",
+          "request": {
+            "method": "GET",
+            "description": "Returns all branches.",
+            "url": {
+              "raw": "http://localhost:5217/api/branches",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "branches"]
+            }
+          }
+        },
+        {
+          "name": "Get Branch by ID",
+          "request": {
+            "method": "GET",
+            "description": "Returns a single branch with its associated leases. Returns 404 if not found.",
+            "url": {
+              "raw": "http://localhost:5217/api/branches/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "branches", "1"]
+            }
+          }
+        },
+        {
+          "name": "Update Branch",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Updates an existing branch. branchId in the body must match the ID in the URL.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchId\": 1,\n  \"oracleCode\": \"BR001-UPD\",\n  \"branchName\": \"Main Branch Updated\",\n  \"lessee\": \"Company ABC Inc\",\n  \"status\": \"Active\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/branches/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "branches", "1"]
+            }
+          }
+        },
+        {
+          "name": "Delete Branch",
+          "request": {
+            "method": "DELETE",
+            "description": "Deletes a branch by ID. Returns 404 if not found.",
+            "url": {
+              "raw": "http://localhost:5217/api/branches/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "branches", "1"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lessors",
+      "description": "CRUD endpoints for managing lessors (property owners). No authentication required.",
+      "item": [
+        {
+          "name": "Create Lessor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Creates a new lessor. fullName is required.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"John Doe\",\n  \"nic\": \"123456789\",\n  \"address\": \"123 Main Street, City, Country\",\n  \"bankName\": \"First National Bank\",\n  \"accountNumber\": \"98765432\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/lessors",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "lessors"]
+            }
+          }
+        },
+        {
+          "name": "Get All Lessors",
+          "request": {
+            "method": "GET",
+            "description": "Returns all lessors.",
+            "url": {
+              "raw": "http://localhost:5217/api/lessors",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "lessors"]
+            }
+          }
+        },
+        {
+          "name": "Get Lessor by ID",
+          "request": {
+            "method": "GET",
+            "description": "Returns a single lessor with their associated leases. Returns 404 if not found.",
+            "url": {
+              "raw": "http://localhost:5217/api/lessors/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "lessors", "1"]
+            }
+          }
+        },
+        {
+          "name": "Update Lessor",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Updates an existing lessor. lessorId in the body must match the ID in the URL.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lessorId\": 1,\n  \"fullName\": \"John Doe Smith\",\n  \"nic\": \"123456789\",\n  \"address\": \"456 Oak Street, City, Country\",\n  \"bankName\": \"First National Bank\",\n  \"accountNumber\": \"98765432\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/lessors/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "lessors", "1"]
+            }
+          }
+        },
+        {
+          "name": "Delete Lessor",
+          "request": {
+            "method": "DELETE",
+            "description": "Deletes a lessor by ID. Returns 404 if not found.",
+            "url": {
+              "raw": "http://localhost:5217/api/lessors/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "lessors", "1"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Leases",
+      "description": "CRUD endpoints for managing leases. Each lease is linked to a Branch and a Lessor. No authentication required.",
+      "item": [
+        {
+          "name": "Create Lease",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Creates a new lease. branchId and lessorId must reference existing records otherwise returns 400.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchId\": 1,\n  \"lessorId\": 1,\n  \"leaseNo\": \"LEASE-2024-001\",\n  \"leasePropertyAddress\": \"789 Property Avenue, City, Country\",\n  \"sqft\": 5000,\n  \"startDate\": \"2024-01-01\",\n  \"endDate\": \"2027-12-31\",\n  \"extensions\": \"Option to extend for 3 more years\",\n  \"numberOfYears\": 3,\n  \"rentAdvance\": 50000.00,\n  \"rentAdvancePeriod\": 12,\n  \"refundableDeposit\": 100000.00,\n  \"noticePeriodMonths\": 3,\n  \"remarks\": \"Premium location with parking\",\n  \"agreementValue\": 2000000.00,\n  \"annualRate\": 10,\n  \"utilityBill\": 0.00,\n  \"whtRate\": 0,\n  \"vatRate\": 0,\n  \"leaseStatus\": \"Active\"\n}"
+            
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/leases",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leases"]
+            }
+          }
+        },
+        {
+          "name": "Get All Leases",
+          "request": {
+            "method": "GET",
+            "description": "Returns all leases with their related Branch, Lessor and PaymentSchedules included.",
+            "url": {
+              "raw": "http://localhost:5217/api/leases",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leases"]
+            }
+          }
+        },
+        {
+          "name": "Get Lease by ID",
+          "request": {
+            "method": "GET",
+            "description": "Returns a single lease with Branch, Lessor and PaymentSchedules included. Returns 404 if not found.",
+            "url": {
+              "raw": "http://localhost:5217/api/leases/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leases", "1"]
+            }
+          }
+        },
+        {
+          "name": "Get Leases by Branch",
+          "request": {
+            "method": "GET",
+            "description": "Returns all leases belonging to a specific branch including related data.",
+            "url": {
+              "raw": "http://localhost:5217/api/leases/branch/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leases", "branch", "1"]
+            }
+          }
+        },
+        {
+          "name": "Get Leases by Lessor",
+          "request": {
+            "method": "GET",
+            "description": "Returns all leases belonging to a specific lessor including related data.",
+            "url": {
+              "raw": "http://localhost:5217/api/leases/lessor/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leases", "lessor", "1"]
+            }
+          }
+        },
+        {
+          "name": "Update Lease",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Updates an existing lease. leaseId in the body must match the ID in the URL. branchId and lessorId are validated against existing records.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leaseId\": 1,\n  \"branchId\": 1,\n  \"lessorId\": 1,\n  \"leaseNo\": \"LEASE-2024-001\",\n  \"leasePropertyAddress\": \"789 Property Avenue, Updated City, Country\",\n  \"sqft\": 5500,\n  \"startDate\": \"2024-01-01\",\n  \"endDate\": \"2027-12-31\",\n  \"extensions\": \"Option to extend for 3 more years\",\n  \"numberOfYears\": 3,\n  \"rentAdvance\": 55000.00,\n  \"rentAdvancePeriod\": 12,\n  \"refundableDeposit\": 110000.00,\n  \"noticePeriodMonths\": 3,\n  \"remarks\": \"Premium location with parking and security\",\n  \"agreementValue\": 2200000.00,\n  \"annualRate\": 10,\n  \"utilityBill\": 0.00,\n  \"whtRate\": 0,\n  \"vatRate\": 0,\n  \"leaseStatus\": \"Active\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/leases/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leases", "1"]
+            }
+          }
+        },
+        {
+          "name": "Delete Lease",
+          "request": {
+            "method": "DELETE",
+            "description": "Deletes a lease by ID. Returns 404 if not found.",
+            "url": {
+              "raw": "http://localhost:5217/api/leases/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leases", "1"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lease Payment Schedules",
+      "description": "CRUD endpoints for managing annual payment schedules linked to leases. No authentication required.",
+      "item": [
+        {
+          "name": "Create Payment Schedule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Creates a new payment schedule for a lease. leaseId must reference an existing lease. grossAmount is required and must be non-negative. Returns 409 Conflict if payment schedules already exist for the lease.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leaseId\": 1,\n  \"yearlyPayments\": [\n    { \"leaseYear\": 1, \"grossAmount\": 500000.00 },\n    { \"leaseYear\": 2, \"grossAmount\": 520000.00 },\n    { \"leaseYear\": 3, \"grossAmount\": 540000.00}\n  ]\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/leasepaymentschedules",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leasepaymentschedules"]
+            }
+          }
+        },
+        {
+          "name": "Get All Payment Schedules",
+          "request": {
+            "method": "GET",
+            "description": "Returns all payment schedules.",
+            "url": {
+              "raw": "http://localhost:5217/api/leasepaymentschedules",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leasepaymentschedules"]
+            }
+          }
+        },
+        {
+          "name": "Get Payment Schedule by ID",
+          "request": {
+            "method": "GET",
+            "description": "Returns a single payment schedule by ID. Returns 404 if not found.",
+            "url": {
+              "raw": "http://localhost:5217/api/leasepaymentschedules/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leasepaymentschedules", "1"]
+            }
+          }
+        },
+        {
+          "name": "Get Schedules by Lease",
+          "request": {
+            "method": "GET",
+            "description": "Returns all payment schedules for a specific lease ordered by lease year.",
+            "url": {
+              "raw": "http://localhost:5217/api/leasepaymentschedules/lease/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leasepaymentschedules", "lease", "1"]
+            }
+          }
+        },
+        {
+          "name": "Update Payment Schedule",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Updates an existing payment schedule by ID. Only leaseYear, grossAmount  can be updated.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leaseYear\": 1,\n  \"grossAmount\": 500000.00}"
+            },
+            "url": {
+              "raw": "http://localhost:5217/api/leasepaymentschedules/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leasepaymentschedules", "1"]
+            }
+          }
+        },
+        {
+          "name": "Delete Payment Schedule",
+          "request": {
+            "method": "DELETE",
+            "description": "Deletes a payment schedule by ID. Returns 404 if not found.",
+            "url": {
+              "raw": "http://localhost:5217/api/leasepaymentschedules/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leasepaymentschedules", "1"]
+            }
+          }
+        },
+        {
+          "name": "Get Payment Cashflows",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Returns monthly net cash flow and present value rows for the full lease period. Uses the lease annual_rate field as the discount rate (stored as e.g. 10 meaning 10%, divided by 100 before use). Each row includes monthNumber, leaseYear, monthName, year, dueDate, grossRent, rentAdvanceDeduction, netCashFlow, discountFactor and presentValue. Also returns totals for all monetary columns. Returns 404 if lease not found. Returns 400 if startDate, endDate or annualRate is missing on the lease.",
+            "url": {
+              "raw": "http://localhost:5217/api/leases/1/payment-cashflows",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leases", "1", "payment-cashflows"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has lease info', () => pm.expect(pm.response.json().lease).to.be.an('object'));",
+                  "pm.test('Has assumptions', () => pm.expect(pm.response.json().assumptions).to.be.an('object'));",
+                  "pm.test('Has cashflows array', () => pm.expect(pm.response.json().cashflows).to.be.an('array'));",
+                  "pm.test('Has totals', () => pm.expect(pm.response.json().totals).to.be.an('object'));",
+                  "pm.test('Cashflows not empty', () => pm.expect(pm.response.json().cashflows.length).to.be.above(0));",
+                  "pm.test('First row has required fields', () => {",
+                  "  const row = pm.response.json().cashflows[0];",
+                  "  pm.expect(row).to.have.all.keys('monthNumber','leaseYear','monthName','year','dueDate','grossRent','rentAdvanceDeduction','netCashFlow','discountFactor','presentValue');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Payment Cashflows by Year",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Returns monthly net cash flow and present value rows for a specific lease year only. Uses the lease annual_rate field as the discount rate (stored as e.g. 10 meaning 10%, divided by 100 before use). Returns 404 if the lease is not found, and 400 if the requested year is invalid or lease dates/rate are missing.",
+            "url": {
+              "raw": "http://localhost:5217/api/leases/1/cashflow-year/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leases", "1", "cashflow-year", "1"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has lease info', () => pm.expect(pm.response.json().lease).to.be.an('object'));",
+                  "pm.test('Has assumptions', () => pm.expect(pm.response.json().assumptions).to.be.an('object'));",
+                  "pm.test('Has cashflows array', () => pm.expect(pm.response.json().cashflows).to.be.an('array'));",
+                  "pm.test('Has totals', () => pm.expect(pm.response.json().totals).to.be.an('object'));",
+                  "pm.test('Cashflows are only for the requested year', () => {",
+                  "  const cashflows = pm.response.json().cashflows;",
+                  "  pm.expect(cashflows.length).to.be.above(0);",
+                  "  cashflows.forEach((row) => pm.expect(row.leaseYear).to.equal(1));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Payment Cashflows - 404 Not Found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Error case: lease ID does not exist. Expects 404 with message 'Lease not found'.",
+            "url": {
+              "raw": "http://localhost:5217/api/leases/9999/payment-cashflows",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "leases", "9999", "payment-cashflows"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Error message correct', () => pm.expect(pm.response.json().message).to.equal('Lease not found'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "description": "Authenticated endpoints for the signed-in user's notifications. All requests require a valid access token in the Authorization header.",
+      "item": [
+        {
+          "name": "Get Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Returns a paginated list of the signed-in user's notifications. Supports optional query parameters like pageNumber, pageSize, and isRead.",
+            "url": {
+              "raw": "http://localhost:5217/api/notifications?pageNumber=1&pageSize=10",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "notifications"],
+              "query": [
+                {
+                  "key": "pageNumber",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Unread Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Returns only unread notifications for the signed-in user. Supports the same paging query parameters as the main list endpoint.",
+            "url": {
+              "raw": "http://localhost:5217/api/notifications/unread?pageNumber=1&pageSize=10",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "notifications", "unread"],
+              "query": [
+                {
+                  "key": "pageNumber",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Marks a single notification as read by its ID. Returns 404 if the notification does not belong to the signed-in user.",
+            "url": {
+              "raw": "http://localhost:5217/api/notifications/1/read",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "notifications", "1", "read"]
+            }
+          }
+        },
+        {
+          "name": "Mark All Notifications as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Marks all notifications for the signed-in user as read.",
+            "url": {
+              "raw": "http://localhost:5217/api/notifications/read-all",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "notifications", "read-all"]
+            }
+          }
+        },
+        {
+          "name": "Delete Notification",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "description": "Deletes a notification by ID if it belongs to the signed-in user.",
+            "url": {
+              "raw": "http://localhost:5217/api/notifications/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5217",
+              "path": ["api", "notifications", "1"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

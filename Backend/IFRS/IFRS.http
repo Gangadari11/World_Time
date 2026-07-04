@@ -1,0 +1,6 @@
+@IFRS_HostAddress = http://localhost:5217
+
+GET {{IFRS_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
